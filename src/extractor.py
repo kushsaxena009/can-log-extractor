@@ -62,4 +62,34 @@ class CANLogExtractor:
         plt.ylabel("Count")
         plt.tight_layout()
         plt.show()
+    
+    def plot_timestamp_vs_id(self):
+        plt.scatter(self.data["timestamp"], self.data["id"])
+        plt.title("Timestamp vs Message ID")
+        plt.xlabel("Timestamp (s)")
+        plt.ylabel("Message ID")
+        plt.tight_layout()
+        plt.show()
+    
+    def plot_byte(self, byte_index):
+        if byte_index < 0 or byte_index > 7:
+            print("Invalid byte index (0-7).")
+            return
+        col = f"byte_{byte_index}"
+        self.data[col] = self.data[col].astype(int)
+        plt.plot(self.data["timestamp"], self.data[col])
+        plt.title(f"Byte {byte_index} vs Time")
+        plt.xlabel("Timestamp")
+        plt.ylabel("Value")
+        plt.tight_layout()
+        plt.show()
+
+    def export_csv(self, output_path):
+        if self.data is None:
+            print("No data loaded.")
+            return
+        self.data.to_csv(output_path, index=False)
+        print(f"Exported CSV to {output_path}")
+
+
 

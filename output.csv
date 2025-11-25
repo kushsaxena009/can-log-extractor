@@ -1,0 +1,3 @@
+timestamp,id,dlc,byte_0,byte_1,byte_2,byte_3,byte_4,byte_5,byte_6,byte_7
+0.001,0x100,8,11,22,33,44,55,66,77,88
+0.003,0x101,8,AA,BB,CC,DD,EE,FF,00,11
