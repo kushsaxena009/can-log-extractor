@@ -1,8 +1,20 @@
 import streamlit as st
 import re
-from extractor import CANLogExtractor
 
-#st.title("CAN Log Extractor + Visualizer")
+# Ensure extractor is importable whether running as package or script
+import sys
+import pathlib
+root = pathlib.Path(__file__).resolve().parent
+# Add package parent (workspace root) to sys.path so `src` can be imported when needed
+workspace_root = str(root.parent)
+if workspace_root not in sys.path:
+    sys.path.insert(0, workspace_root)
+
+try:
+    from src.extractor import CANLogExtractor
+except ModuleNotFoundError:
+    # Fallback for when running directly from the `src` folder or without package context
+    from extractor import CANLogExtractor
 
 st.set_page_config(
     page_title="CAN Log Extractor + Visualizer",
@@ -16,8 +28,9 @@ A simple tool to parse, analyze, and visualize CAN network logs.
 """)
 
 st.sidebar.header("Settings")
-uploaded = st.sidebar.file_uploader("Upload CAN Log (.asc)", type=["asc", "txt","blf"])
+log_file = st.sidebar.file_uploader("Upload CAN Log (.asc)", type=["asc", "txt","blf"])
 dbc_file = st.sidebar.file_uploader("Upload DBC file (optional)", type=["dbc"])
+dbc_path = None
 
 def load_log(self):
     parsed_lines = []
@@ -41,9 +54,9 @@ def load_log(self):
             print("Parsing Error:", e)
             return False
 
-if uploaded:
+if log_file:
     with open("temp.asc", "wb") as f:
-        f.write(uploaded.read())
+        f.write(log_file.read())
 
     log = CANLogExtractor("temp.asc")
 
@@ -73,11 +86,12 @@ if uploaded:
 
             
 if dbc_file:
-    with open("temp.dbc", "wb") as f:
-        f.write(dbc_file.read())
+    dbc_path = "uploaded.dbc"
+    with open(dbc_path, "wb") as f:
+        f.write(dbc_file.getbuffer())
 
     from dbc_decoder import DBCDecoder
-    decoder = DBCDecoder("temp.dbc")
+    decoder = DBCDecoder(dbc_path)
 
     st.subheader("Decode Example")
     example_row = log.data.iloc[0]
@@ -85,5 +99,15 @@ if dbc_file:
 
     decoded = decoder.decode_message(example_row['id'], data_bytes)
     st.write(decoded)
+
+extractor = CANLogExtractor(dbc_file, dbc_path=dbc_path)
+
+if st.button("Show Decoded Signals"):
+    decoded = extractor.decode_all_frames()
+    if decoded:
+        st.dataframe(decoded)
+    else:
+        st.warning("No DBC match or nothing decoded.")
+
 
 #st.write(log.data.head(20))

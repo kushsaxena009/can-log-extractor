@@ -3,10 +3,15 @@ import re
 import matplotlib.pyplot as plt
 import streamlit as st
 
+from .dbc_decoder import DBCDecoder
+
+
 class CANLogExtractor:
-    def __init__(self, file_path):
+    def __init__(self, file_path, dbc_path=None):
         self.file_path = file_path
+        self.dbc_path = dbc_path
         self.data = None
+        self.decoder = DBCDecoder(dbc_path)
     
     def load_log(self):
         """
@@ -126,6 +131,28 @@ class CANLogExtractor:
             return
         self.data.to_csv(output_path, index=False)
         print(f"Exported CSV to {output_path}")
+    
+    def decode_all_frames(self):
+        if self.data is None:
+            return None
+
+        decoded_output = []
+
+        for _, row in self.data.iterrows():
+            msg_id = row["id"]
+            data = [row[f"byte_{i}"] for i in range(8)]
+
+            decoded = self.decoder.decode_frame(msg_id, data)
+            
+            if decoded:
+                decoded_output.append({
+                    "timestamp": row["timestamp"],
+                    "id": msg_id,
+                    **decoded  # expand dict of signals
+                })
+
+        return decoded_output
+
 
 
 
