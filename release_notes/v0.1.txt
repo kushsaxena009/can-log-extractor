@@ -1,0 +1,9 @@
+Version 0.1 - MVP Features:
+- CAN log loading (ASC-like)
+- Summary metrics
+- Filtering by ID & time
+- ID frequency visualization
+- Timestamp vs ID plot
+- Byte trend plot
+- CSV export
+- Simple Streamlit GUI
