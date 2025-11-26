@@ -15,44 +15,73 @@ class CANLogExtractor:
     
     def load_log(self):
         """
-        Reads Vector ASC CAN logs.
-        Format example:
-        <timestamp> <channel> <ID> Tx d <DLC> <data bytes...>
+            Reads multiple ASC formats automatically.
+            Supports:
+            1. Vector ASC Standard
+            ts ch id Tx/Rx d dlc bytes...
+            2. Vector ASC without Tx/Rx
+            ts ch id d dlc bytes...
+            3. ETAS ASC
+            ts id dlc bytes...
+            4. Old CANalyzer
+            ts id Tx/Rx dlc bytes...
+            5. ASC files with headers (date, base, etc.)
         """
+
         parsed_lines = []
 
-        # Correct ASC regex
-        pattern = re.compile(
-            r"(?P<ts>\d+\.\d+)\s+"                  # timestamp
-            r"(?P<channel>\d+)\s+"                  # channel number
-            r"(?P<id>[0-9A-Fa-f]+)\s+"              # CAN ID
-            r"(Tx|Rx)\s+"                           # direction
-            r"d\s+(?P<dlc>\d+)\s+"                  # 'd' + DLC
-            r"(?P<data>(?:[0-9A-Fa-f]{2}\s+){0,8})" # up to 8 bytes
-        )
-        
-
-        #pattern = r"(\d+\.\d+)\s+\d+\s+([A-Fa-f0-9]+)\s+Tx\s+d\s+(\d+)\s+((?:[A-Fa-f0-9]{2}\s+)*[A-Fa-f0-9]{2})"
-        #pattern = r"(\d+\.\d+)\s+\d+\s+([A-Fa-f0-9]+)\s+(?:Tx\s+)?d\s+(\d+)\s+((?:[A-Fa-f0-9]{2}\s*)+)"
-
+        # MULTI-FORMAT PATTERNS
+        patterns = [
+            # 1. Vector Standard ASC
+            re.compile(
+                r"(?P<ts>\d+\.\d+)\s+\d+\s+(?P<id>[A-Fa-f0-9]+)\s+(Tx|Rx)\s+d\s+(?P<dlc>\d+)\s+(?P<data>(?:[A-Fa-f0-9]{2}\s*)+)"
+            ),
+            # 2. No Tx/Rx
+            re.compile(
+                r"(?P<ts>\d+\.\d+)\s+\d+\s+(?P<id>[A-Fa-f0-9]+)\s+d\s+(?P<dlc>\d+)\s+(?P<data>(?:[A-Fa-f0-9]{2}\s*)+)"
+            ),
+            # 3. ETAS format: ts id dlc bytes
+            re.compile(
+                r"(?P<ts>\d+\.\d+)\s+(?P<id>[A-Fa-f0-9]+)\s+(?P<dlc>\d+)\s+(?P<data>(?:[A-Fa-f0-9]{2}\s*)+)"
+            ),
+            # 4. Old CANalyzer: ts id Tx/Rx dlc bytes
+            re.compile(
+                r"(?P<ts>\d+\.\d+)\s+(?P<id>[A-Fa-f0-9]+)\s+(Tx|Rx)\s+(?P<dlc>\d+)\s+(?P<data>(?:[A-Fa-f0-9]{2}\s*)+)"
+            )
+        ]
 
         try:
             with open(self.file_path, "r") as f:
                 for line in f:
-                    m = pattern.search(line)
-                    if m:
-                        data_bytes = m.group("data").strip().split()
 
-                        # Ensure exactly 8 columns (pad missing bytes)
-                        padded = data_bytes + ["00"]*(8 - len(data_bytes))
+                    # skip headers
+                    if line.startswith(("date", "base", "//", "Begin", "End", "version")):
+                        continue
 
-                        parsed_lines.append([
-                            float(m.group("ts")),
-                            m.group("id"),
-                            int(m.group("dlc")),
-                            *padded
-                        ])
+                    line = line.strip()
+                    matched = False
 
+                    for pattern in patterns:
+                        m = pattern.match(line)
+                        if m:
+                            matched = True
+
+                            ts = float(m.group("ts"))
+                            msg_id = m.group("id")
+                            dlc = int(m.group("dlc"))
+                            data_bytes = m.group("data").strip().split()
+
+                            # pad to 8 bytes
+                            data_bytes = data_bytes + ["00"] * (8 - len(data_bytes))
+
+                            parsed_lines.append([ts, msg_id, dlc] + data_bytes)
+                            break
+
+                    # if nothing matched → ignore line silently
+                    if not matched:
+                        continue
+
+            # final DF
             cols = ["timestamp", "id", "dlc"] + [f"byte_{i}" for i in range(8)]
             self.data = pd.DataFrame(parsed_lines, columns=cols)
 
@@ -61,6 +90,7 @@ class CANLogExtractor:
         except Exception as e:
             print("Parsing Error:", e)
             return False
+
 
     def get_summary(self):
         if self.data is None:
@@ -81,14 +111,6 @@ class CANLogExtractor:
                          (self.data["timestamp"] <= end)]
     
     def plot_id_frequency(self):
-        # freq = self.data["id"].value_counts()
-        # fig, ax = plt.subplots()
-        # freq.plot(kind="bar")
-        # plt.title("CAN ID Frequency")
-        # plt.xlabel("Message ID")
-        # plt.ylabel("Count")
-        # plt.tight_layout()
-        # plt.show()
         freq = self.data["id"].value_counts()
         fig, ax = plt.subplots()
         ax.bar(freq.index.astype(str), freq.values)
@@ -135,10 +157,17 @@ class CANLogExtractor:
     def decode_all_frames(self):
         if self.data is None:
             return None
+        # BONUS SAFETY: Decode only IDs that exist in both ASC & DBC
+        id_report = self.compare_asc_dbc_ids()
+        safe_ids = set(id_report["matched_ids"]) if id_report else set()
 
         decoded_output = []
 
         for _, row in self.data.iterrows():
+            # skip IDs that do not match between ASC and DBC
+            if safe_ids and row["id"] not in safe_ids:
+                continue
+
             msg_id = row["id"]
             data = [row[f"byte_{i}"] for i in range(8)]
 
@@ -152,7 +181,31 @@ class CANLogExtractor:
                 })
 
         return decoded_output
+    
+    def compare_asc_dbc_ids(self):
+        """
+        Compare ASC CAN IDs vs DBC Message IDs.
+        Returns a dictionary with:
+        - matched_ids
+        - asc_not_in_dbc
+        - dbc_not_in_asc
+        """
+        if self.data is None or self.decoder.db is None:
+            return None
 
+        # Extract IDs from ASC (strings like "2B0")
+        asc_ids = set(self.data["id"].unique())
 
+        # Extract IDs from DBC (convert to hex strings)
+        dbc_ids = set([format(msg.frame_id, 'X').upper() for msg in self.decoder.db.messages])
 
+        # Compare
+        matched = asc_ids.intersection(dbc_ids)
+        asc_missing = asc_ids - dbc_ids
+        dbc_missing = dbc_ids - asc_ids
 
+        return {
+            "matched_ids": sorted(list(matched)),
+            "asc_not_in_dbc": sorted(list(asc_missing)),
+            "dbc_not_in_asc": sorted(list(dbc_missing)),
+        }

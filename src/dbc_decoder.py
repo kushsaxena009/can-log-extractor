@@ -9,17 +9,32 @@ class DBCDecoder:
                 print("DBC loaded successfully.")
             except Exception as e:
                 print("DBC load error:", e)
+                self.db = None
 
     def decode_frame(self, message_id, data_bytes):
         """
-        Returns decoded signals if message exists in DBC.
+        message_id: hex string like "2B0"
+        data_bytes: list of integers like [12, 34, 56, 78, 0, 0, 0, 0]
         """
+
         if self.db is None:
             return None
 
         try:
-            message = self.db.get_message_by_frame_id(int(message_id, 16))
-            data = bytes(int(b, 16) for b in data_bytes)
-            return message.decode(data)
-        except:
+            # Convert hex ID string to decimal
+            frame_id = int(message_id, 16)
+
+            # Find the message definition in DBC
+            message = self.db.get_message_by_frame_id(frame_id)
+            if message is None:
+                return None
+
+            # Ensure byte array is valid
+            payload = bytes(int(b) for b in data_bytes)
+
+            # Decode using cantools
+            return message.decode(payload)
+
+        except Exception as e:
+            print("Decode error:", e)
             return None
