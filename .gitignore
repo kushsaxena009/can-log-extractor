@@ -1,0 +1,28 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Streamlit temporary files
+*.log
+*.out
+
+# Uploaded temporary files
+temp/
+uploaded_log.asc
+uploaded.dbc
+output.csv
+
+# Example artifacts
+*.asc
+*.dbc
+*.csv
+
+# OS junk files
+.DS_Store
+Thumbs.db
+
+# Virtual environment (if used)
+venv/
+.env/
+.idea/
+.vscode/
