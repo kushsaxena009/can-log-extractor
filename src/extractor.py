@@ -1,3 +1,7 @@
+"""
+Parses ASC and loads into DataFrame.
+Supports multiple ASC formats."""
+
 import pandas as pd
 import re
 import matplotlib.pyplot as plt

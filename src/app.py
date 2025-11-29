@@ -1,3 +1,6 @@
+# CAN Log Extractor Streamlit App
+# Day 6: Polished UI + Clean flow
+
 import streamlit as st
 import sys
 import pathlib
